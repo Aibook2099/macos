@@ -1,0 +1,39 @@
+name = "websocket-chat"
+main = "src/index.ts"
+compatibility_date = "2024-03-20"
+
+[build]
+command = "npm run build"
+
+[env.production]
+workers_dev = true
+route = "chat.example.com/*"
+zone_id = "your-zone-id"
+
+[env.staging]
+workers_dev = true
+route = "staging-chat.example.com/*"
+zone_id = "your-zone-id"
+
+[durable_objects]
+bindings = [
+  { name = "CHAT_ROOM", class_name = "ChatRoom" }
+]
+
+[[migrations]]
+tag = "v1"
+new_classes = ["ChatRoom"]
+
+[kv_namespaces]
+binding = "CHAT_STORAGE"
+id = "your-kv-namespace-id"
+preview_id = "your-preview-kv-namespace-id"
+
+[vars]
+JWT_SECRET = "your-jwt-secret"
+MAX_CONNECTIONS = "1000"
+HEARTBEAT_INTERVAL = "30000"
+MESSAGE_TTL = "3600"
+
+[site]
+bucket = "./public" 

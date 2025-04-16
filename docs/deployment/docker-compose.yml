@@ -1,0 +1,26 @@
+services:
+  postgres:
+    image: postgres:15-alpine
+    container_name: personality_db
+    environment:
+      POSTGRES_USER: personality
+      POSTGRES_PASSWORD: personality123
+      POSTGRES_DB: personality_db
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U personality"]
+      interval: 5s
+      timeout: 5s
+      retries: 5
+    networks:
+      - personality_network
+
+volumes:
+  postgres_data:
+
+networks:
+  personality_network:
+    driver: bridge 
