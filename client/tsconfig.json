@@ -19,8 +19,9 @@
     "paths": {
       "@/*": ["client/src/*"],
       "@shared/*": ["shared/*"]
-    }
+    },
+    "types": ["vitest/globals", "jest", "node"]
   },
-  "include": ["src"],
+  "include": ["src", "src/**/*.test.ts", "src/**/*.test.tsx"],
   "exclude": ["node_modules"]
 }

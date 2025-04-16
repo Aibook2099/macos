@@ -1,16 +1,25 @@
 import { 
-  WebSocketMessage,
+  SystemMessages,
   WebSocketConfig,
   WebSocketState,
   WebSocketEvent,
-  WebSocketEventHandler
+  WebSocketEventHandler,
+  HeartbeatMessage,
+  BatchMessage,
+  ErrorMessage,
+  SystemMessage,
+  ChatMessage,
+  ChatResponse,
+  WebSocketMessageData
 } from './types';
 import { 
   isBatchMessage,
   isHeartbeatMessage,
   isAuthMessage,
   isAuthResponse,
-  isSystemMessage
+  isSystemMessage,
+  isChatMessage,
+  isChatResponse
 } from './messages';
 import { MessageQueue, MessagePriority } from './queue';
 
@@ -48,7 +57,17 @@ export class WebSocketClientImpl {
       this.state = 'open';
       this.retryCount = 0;
       this.startHeartbeat();
-      this.emit({ type: 'system', message: { type: 'system', data: { event: 'connected', payload: {}, content: 'Connected', timestamp: Date.now() } } });
+      const systemMessage: SystemMessage = {
+        type: 'system',
+        data: {
+          event: 'connected',
+          payload: {},
+          content: 'Connected',
+          timestamp: Date.now()
+        }
+      };
+      this.emit({ type: 'system', message: systemMessage });
+      this.messageQueue.process();
     };
 
     this.ws.onclose = () => {
@@ -58,12 +77,21 @@ export class WebSocketClientImpl {
     };
 
     this.ws.onerror = (error) => {
-      this.emit({ type: 'error', message: { type: 'error', data: { code: 'WS_ERROR', message: error.toString(), content: 'WebSocket error', timestamp: Date.now() } } });
+      const errorMessage: ErrorMessage = {
+        type: 'error',
+        data: {
+          code: 'WS_ERROR',
+          message: error.toString(),
+          content: 'WebSocket error',
+          timestamp: Date.now()
+        }
+      };
+      this.emit({ type: 'error', message: errorMessage });
     };
 
     this.ws.onmessage = (event) => {
       try {
-        const message = JSON.parse(event.data) as WebSocketMessage;
+        const message = JSON.parse(event.data) as SystemMessages;
         this.handleMessage(message);
       } catch (error) {
         console.error('Failed to parse message:', error);
@@ -79,21 +107,22 @@ export class WebSocketClientImpl {
     }
   }
 
-  public send(message: WebSocketMessage, priority: MessagePriority = MessagePriority.NORMAL): void {
+  public send(message: SystemMessages, priority: MessagePriority = MessagePriority.NORMAL): void {
     this.messageQueue.enqueue(message, { priority });
   }
 
-  private async rawSend(message: WebSocketMessage | WebSocketMessage[]): Promise<void> {
+  private async rawSend(message: SystemMessages | SystemMessages[]): Promise<void> {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       throw new Error('WebSocket is not connected');
     }
 
     if (Array.isArray(message)) {
-      const batchMessage: WebSocketMessage = {
+      const messages = message.map(msg => msg.data) as WebSocketMessageData[];
+      const batchMessage: BatchMessage = {
         type: 'batch',
         data: {
-          messages: message,
-          count: message.length,
+          messages,
+          count: messages.length,
           content: 'Batch message',
           timestamp: Date.now()
         }
@@ -104,9 +133,13 @@ export class WebSocketClientImpl {
     }
   }
 
-  public handleMessage(message: WebSocketMessage): void {
+  public handleMessage(message: SystemMessages): void {
     if (isBatchMessage(message)) {
-      message.data.messages.forEach(msg => this.handleMessage(msg as WebSocketMessage));
+      const messages = message.data.messages.map(data => ({
+        type: 'system',
+        data
+      } as SystemMessages));
+      messages.forEach(msg => this.handleMessage(msg));
       return;
     }
 
@@ -116,6 +149,8 @@ export class WebSocketClientImpl {
       this.emit({ type: 'auth', message });
     } else if (isSystemMessage(message)) {
       this.emit({ type: 'system', message });
+    } else if (isChatMessage(message) || isChatResponse(message)) {
+      this.emit({ type: 'chat', message });
     }
 
     this.emit({ type: 'message', message });
@@ -145,19 +180,29 @@ export class WebSocketClientImpl {
     }
 
     this.heartbeatTimer = setInterval(() => {
-      this.send({
+      const heartbeatMessage: HeartbeatMessage = {
         type: 'heartbeat',
         data: {
           timestamp: Date.now(),
           content: 'Heartbeat'
         }
-      }, MessagePriority.HIGH);
+      };
+      this.send(heartbeatMessage, MessagePriority.HIGH);
     }, this.heartbeatInterval);
   }
 
   private scheduleReconnect(): void {
     if (this.retryCount >= this.maxRetries) {
-      this.emit({ type: 'error', message: { type: 'error', data: { code: 'MAX_RETRIES', message: 'Max retries reached', content: 'Connection failed', timestamp: Date.now() } } });
+      const errorMessage: ErrorMessage = {
+        type: 'error',
+        data: {
+          code: 'MAX_RETRIES',
+          message: 'Max retries reached',
+          content: 'Connection failed',
+          timestamp: Date.now()
+        }
+      };
+      this.emit({ type: 'error', message: errorMessage });
       return;
     }
 
